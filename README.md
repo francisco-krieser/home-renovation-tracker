@@ -4,6 +4,14 @@ A GraphQL API for contractors and homeowners to collaborate on renovation projec
 
 ---
 
+## Walkthrough Videos
+
+- [Overall Architecture](https://www.loom.com/share/baff0c343c92468fbf2e0ecce4a52135)
+- [Decisions, Tradeoffs and Solutions](https://www.loom.com/share/07b5572926ff4af38883dc2f6f43ce3c)
+- [Demo - Real-time Messaging](https://www.loom.com/share/94e7aae7dfe24eeeb25e706bd9cb7f55)
+
+---
+
 ## Setup
 
 ### Prerequisites
@@ -320,3 +328,12 @@ The `PrismaPlugin` propagates Prisma's `include`/`select` up through the resolve
 ### `addHomeowner` transaction isolation level
 
 `addHomeowner` creates a user and assigns them to a job inside a single `$transaction`. Prisma's default transaction isolation is **Read Committed**. A theoretical race condition exists: two concurrent requests could both check that `homeowner_id IS NULL` and both attempt to assign. The `assignHomeowner` repository method uses `updateMany` with `WHERE homeowner_id IS NULL` as a conditional update — only one will update one row; the other will see `count === 0` and throw `BadRequestError('Job already has homeowner')`. This handles the race correctly without needing `SERIALIZABLE` isolation. `SERIALIZABLE` would block concurrent transactions on the same rows, becoming a throughput bottleneck under any meaningful concurrency. The current optimistic approach avoids that: conflicts are rare in practice (a contractor double-submitting), and when one does occur the application already throws a clear, actionable error — giving the client the signal to retry if needed, without any DB-level blocking.
+
+---
+
+## What I'd Improve With More Time
+
+- Replace mock password auth with bcrypt hashing, JWT expiry, and refresh token rotation
+- Add cursor-based pagination to `jobs`, `jobHistory`, and `messages` — all currently unbounded
+- Structured logging with correlation IDs instead of raw `console.error`
+- CI/CD pipeline gating on lint + test + build

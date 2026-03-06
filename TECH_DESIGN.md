@@ -7,7 +7,7 @@ Backend system for a tool that allows contractors and homeowners to collaborate 
 **Stack:**
 
 - Language: Node.js + TypeScript
-- API: GraphQL (Apollo Server 5, Express middleware)
+- API: GraphQL (Apollo Server 5, Express middleware, Pothos Plugin Prisma)
 - Real-time: GraphQL subscriptions via `graphql-ws` (WebSocket) + Redis Pub/Sub
 - Database: PostgreSQL + Prisma ORM
 - Cache/Pub-Sub: Redis 7
@@ -443,24 +443,3 @@ Notes:
 - Browser/UI tests (backend-focused project)
 
 ---
-
-## Tradeoffs & Assumptions
-
-
-| Decision                                                                | Rationale                                                                                                                                                                      |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No separate contractor/homeowner profile tables                         | Requirements don't justify the indirection — role is expressed via `users.role` and direct FKs on `jobs`; profile tables were empty wrappers after the address moved to `jobs` |
-| One homeowner per job (`homeowner_id UNIQUE`)                           | Requirements read "their job" (singular) for homeowners; domain reflects a single property owner per renovation job                                                            |
-| `address` on `jobs` not `users`                                         | It is the job site location, not a user attribute; provided at the time the homeowner is added to the job                                                                      |
-| `jobs.contractor_id` and `jobs.homeowner_id` reference `users` directly | Removes an unnecessary join layer; `users.role` is already the authorization source of truth                                                                                   |
-| Soft delete on `users` and `jobs`                                       | Preserves history/auditability while keeping query behavior predictable via `deleted_at IS NULL` filters                                                                       |
-| `addHomeowner` merged into job module                                   | After removing the Homeowner entity, the operation is semantically a job lifecycle step — it modifies a job, returns a job, and enforces job ownership                         |
-| DB-backed identity lookup in auth provider                              | Keeps login behavior realistic while still simple                                                                                                                              |
-| Single shared mock password (`DEFAULT_MOCK_PASSWORD`)                   | Keeps login simple for this exercise; production would use unique per-user hashed passwords                                                                                    |
-| Pothos scope-auth + service-layer checks                                | Scope-auth keeps high-level API policy co-located with field definitions in code-first style; service checks enforce ownership and domain integrity                            |
-| Single login endpoint for both roles                                    | Production standard; client should not need to know role before authenticating                                                                                                 |
-| Service layer between resolvers and repositories                        | Keeps resolver layer thin, centralizes business rules, and improves testability                                                                                                |
-| Pothos subscriptions + graphql-ws + Redis PubSub for real-time messaging | Native Pothos subscription support fits the code-first architecture; `graphql-ws` is the modern WebSocket protocol (replaces `subscriptions-transport-ws`); Redis PubSub enables horizontal scaling. In-memory PubSub was ruled out because it ties events to a single process — Redis makes the system ready for multi-instance deployments without code changes |
-| Apollo Server with Express middleware instead of standalone             | `startStandaloneServer` does not support WebSocket servers. Switching to `expressMiddleware` + `http.createServer` enables attaching a `WebSocketServer` for subscriptions while preserving Apollo Sandbox and all existing HTTP behavior |
-
-
