@@ -14,6 +14,11 @@ jest.mock("../../lib/prisma", () => ({
   },
 }));
 
+jest.mock("../../lib/pubsub", () => ({
+  getPubSub: () => ({ publish: jest.fn().mockResolvedValue(undefined) }),
+  TOPICS: { MESSAGE_SENT: (jobId: string) => `MESSAGE_SENT.${jobId}` },
+}));
+
 const contractorUser: CurrentUser = { userId: "contractor-1", role: Role.CONTRACTOR };
 const homeownerUser: CurrentUser = { userId: "homeowner-1", role: Role.HOMEOWNER };
 

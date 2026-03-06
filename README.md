@@ -17,13 +17,14 @@ A GraphQL API for contractors and homeowners to collaborate on renovation projec
 npm install
 ```
 
-### 2. Start the database
+### 2. Start the database and Redis
 
 ```bash
 docker compose up -d
 ```
 
 > Postgres binds to **port 5433** on your host to avoid conflicts with other running instances.
+> Redis binds to **port 6379** (standard Redis port).
 
 ### 3. Configure environment
 
@@ -46,7 +47,7 @@ npm run db:seed      # seeds the contractor user
 npm run dev
 ```
 
-Server is available at **http://localhost:4000/**
+Server is available at **http://localhost:4000/graphqlgraphql**
 
 ### Available scripts
 
@@ -69,6 +70,7 @@ Server is available at **http://localhost:4000/**
 | `JWT_SECRET` | `dev-secret-change-in-production` | Secret for signing JWTs |
 | `PORT` | `4000` | Server port |
 | `NODE_ENV` | `development` | Environment |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection string (used for subscription pub/sub) |
 
 ---
 
@@ -92,7 +94,7 @@ Protected operations require `Authorization: Bearer <token>` header.
 **Login and get a token:**
 
 ```bash
-curl -X POST http://localhost:4000/ \
+curl -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -d '{
     "query": "mutation { login(email: \"contractor@example.com\", password: \"mock123\") { token role user { id name email } } }"
@@ -237,20 +239,20 @@ mutation {
 
 ```bash
 # 1. Login
-TOKEN=$(curl -s -X POST http://localhost:4000/ \
+TOKEN=$(curl -s -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -d '{"query":"mutation { login(email: \"contractor@example.com\", password: \"mock123\") { token } }"}' \
   | jq -r '.data.login.token')
 
 # 2. Create a job
-JOB_ID=$(curl -s -X POST http://localhost:4000/ \
+JOB_ID=$(curl -s -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d '{"query":"mutation { createJob(input: { description: \"Bathroom remodel\", cost: \"8500.00\" }) { id } }"}' \
   | jq -r '.data.createJob.id')
 
 # 3. Add a homeowner
-curl -s -X POST http://localhost:4000/ \
+curl -s -X POST http://localhost:4000/graphql \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -d "{\"query\":\"mutation { addHomeowner(jobId: \\\"$JOB_ID\\\", input: { name: \\\"Alice\\\", email: \\\"alice@example.com\\\", address: \\\"456 Oak Ave\\\" }) { id homeowner { email } } }\"}"
@@ -258,11 +260,36 @@ curl -s -X POST http://localhost:4000/ \
 
 ### GraphQL Playground
 
-Open **http://localhost:4000/** in your browser. Run `login` first, then set the HTTP Headers panel:
+Open **http://localhost:4000/graphql** in your browser. Run `login` first, then set the HTTP Headers panel:
 
 ```json
 { "Authorization": "Bearer <token>" }
 ```
+
+### Subscriptions
+
+Real-time messaging is delivered via GraphQL subscriptions over WebSocket (`graphql-ws` protocol). Apollo Sandbox (available at the GraphQL endpoint) supports subscriptions natively — no extra tooling needed.
+
+**Subscribe to new messages on a job:**
+
+```graphql
+subscription {
+  messageSent(jobId: "<job-id>") {
+    id
+    content
+    createdAt
+    sender { id name role }
+  }
+}
+```
+
+Set the connection params in Apollo Sandbox (under the "Headers" / "Connection params" tab):
+
+```json
+{ "authorization": "Bearer <token>" }
+```
+
+The subscription filters by `jobId` and enforces the same ownership rules as `sendMessage` — contractors see messages on their jobs, homeowners on their assigned job. Unauthorized subscription attempts fail immediately during the handshake.
 
 ---
 

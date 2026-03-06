@@ -54,3 +54,4 @@ export const UserRoleEnum = builder.enumType("UserRole", {
 // Root types must be declared before any module registers fields on them
 builder.queryType({});
 builder.mutationType({});
+builder.subscriptionType({});
