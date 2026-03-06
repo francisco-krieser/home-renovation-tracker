@@ -11,6 +11,7 @@ export interface UpdateJobData {
   address?: string;
   status?: JobStatus;
   cost?: Decimal;
+  currentVersion: number;
 }
 
 export interface IJobRepository {
@@ -21,7 +22,13 @@ export interface IJobRepository {
     tx?: Client,
     query?: JobQuery,
   ): Promise<Job>;
-  update(id: string, data: UpdateJobData, tx?: Client, query?: JobQuery): Promise<Job>;
+  update(
+    id: string,
+    expectedCurrentVersion: number,
+    data: UpdateJobData,
+    tx?: Client,
+    query?: JobQuery,
+  ): Promise<Job | null>;
   assignHomeowner(jobId: string, homeownerId: string, tx?: Client): Promise<{ count: number }>;
   softDelete(id: string, tx?: Client): Promise<{ count: number }>;
 }
@@ -50,12 +57,19 @@ export class JobRepository implements IJobRepository {
     return tx.job.create({ ...query, data });
   }
 
-  update(id: string, data: UpdateJobData, tx: Client = prisma, query: JobQuery = {}) {
-    return tx.job.update({
-      ...query,
-      where: { id },
+  async update(
+    id: string,
+    expectedCurrentVersion: number,
+    data: UpdateJobData,
+    tx: Client = prisma,
+    query: JobQuery = {},
+  ): Promise<Job | null> {
+    const { count } = await tx.job.updateMany({
+      where: { id, deletedAt: null, currentVersion: expectedCurrentVersion },
       data,
     });
+    if (count === 0) return null;
+    return tx.job.findFirst({ ...query, where: { id } });
   }
 
   assignHomeowner(jobId: string, homeownerId: string, tx: Client = prisma) {
