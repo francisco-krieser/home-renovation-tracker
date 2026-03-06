@@ -45,7 +45,7 @@ model Job {
   contractorId String    @map("contractor_id")
   homeownerId  String?   @unique @map("homeowner_id")
   description  String
-  address      String?
+  address      String
   status       JobStatus @default(PLANNING)
   cost         Decimal   @db.Decimal(10, 2)
   createdAt    DateTime  @default(now()) @map("created_at")

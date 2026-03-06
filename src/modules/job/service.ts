@@ -8,11 +8,13 @@ import { IUserRepository } from "../user/repository";
 
 export interface CreateJobInput {
   description: string;
+  address: string;
   cost: Decimal;
 }
 
 export interface UpdateJobInput {
   description?: string | null;
+  address?: string | null;
   status?: JobStatus | null;
   cost?: Decimal | null;
 }
@@ -20,7 +22,6 @@ export interface UpdateJobInput {
 export interface AddHomeownerInput {
   name: string;
   email: string;
-  address: string;
 }
 
 type JobOwnership = { contractorId: string; homeownerId: string | null };
@@ -57,6 +58,7 @@ export class JobService {
       {
         contractorId: currentUser.userId,
         description: input.description,
+        address: input.address,
         cost: input.cost,
       },
       prisma,
@@ -120,7 +122,7 @@ export class JobService {
         throw e;
       }
 
-      const assigned = await this.jobRepo.assignHomeowner(jobId, homeowner.id, input.address, tx);
+      const assigned = await this.jobRepo.assignHomeowner(jobId, homeowner.id, tx);
       if (assigned.count !== 1) throw new BadRequestError("Job already has a homeowner assigned");
 
       return this.jobRepo.findById(jobId, tx, query);

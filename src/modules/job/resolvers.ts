@@ -6,6 +6,7 @@ import { requireCurrentUser } from "../../context";
 const CreateJobInput = builder.inputType("CreateJobInput", {
   fields: (t) => ({
     description: t.field({ type: "NonEmptyString", required: true }),
+    address: t.field({ type: "NonEmptyString", required: true }),
     cost: t.field({ type: "Decimal", required: true }),
   }),
 });
@@ -13,6 +14,7 @@ const CreateJobInput = builder.inputType("CreateJobInput", {
 const UpdateJobInput = builder.inputType("UpdateJobInput", {
   fields: (t) => ({
     description: t.field({ type: "NonEmptyString", required: false }),
+    address: t.field({ type: "NonEmptyString", required: false }),
     status: t.field({ type: JobStatusEnum, required: false }),
     cost: t.field({ type: "Decimal", required: false }),
   }),
@@ -22,7 +24,6 @@ const AddHomeownerInput = builder.inputType("AddHomeownerInput", {
   fields: (t) => ({
     name: t.field({ type: "NonEmptyString", required: true }),
     email: t.field({ type: "EmailAddress", required: true }),
-    address: t.field({ type: "NonEmptyString", required: true }),
   }),
 });
 
@@ -32,7 +33,7 @@ builder.prismaObject("Job", {
   fields: (t) => ({
     id: t.exposeID("id"),
     description: t.exposeString("description", { authScopes: { contractor: true } }),
-    address: t.exposeString("address", { nullable: true, authScopes: { contractor: true } }),
+    address: t.exposeString("address", { authScopes: { contractor: true } }),
     status: t.expose("status", { type: JobStatusEnum }),
     cost: t.expose("cost", { type: "Decimal", authScopes: { contractor: true } }),
     createdAt: t.expose("createdAt", { type: "DateTime", authScopes: { contractor: true } }),

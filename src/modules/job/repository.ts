@@ -8,6 +8,7 @@ export type JobQuery = Pick<Prisma.JobFindFirstArgs, "include" | "select">;
 
 export interface UpdateJobData {
   description?: string;
+  address?: string;
   status?: JobStatus;
   cost?: Decimal;
 }
@@ -16,17 +17,12 @@ export interface IJobRepository {
   findAllByContractorId(contractorId: string, tx?: Client, query?: JobQuery): Promise<Job[]>;
   findById(id: string, tx?: Client, query?: JobQuery): Promise<Job | null>;
   create(
-    data: { contractorId: string; description: string; cost: Decimal },
+    data: { contractorId: string; description: string; address: string; cost: Decimal },
     tx?: Client,
     query?: JobQuery,
   ): Promise<Job>;
   update(id: string, data: UpdateJobData, tx?: Client, query?: JobQuery): Promise<Job>;
-  assignHomeowner(
-    jobId: string,
-    homeownerId: string,
-    address: string,
-    tx?: Client,
-  ): Promise<{ count: number }>;
+  assignHomeowner(jobId: string, homeownerId: string, tx?: Client): Promise<{ count: number }>;
   softDelete(id: string, tx?: Client): Promise<{ count: number }>;
 }
 
@@ -47,7 +43,7 @@ export class JobRepository implements IJobRepository {
   }
 
   create(
-    data: { contractorId: string; description: string; cost: Decimal },
+    data: { contractorId: string; description: string; address: string; cost: Decimal },
     tx: Client = prisma,
     query: JobQuery = {},
   ) {
@@ -62,10 +58,10 @@ export class JobRepository implements IJobRepository {
     });
   }
 
-  assignHomeowner(jobId: string, homeownerId: string, address: string, tx: Client = prisma) {
+  assignHomeowner(jobId: string, homeownerId: string, tx: Client = prisma) {
     return tx.job.updateMany({
       where: { id: jobId, deletedAt: null, homeownerId: null },
-      data: { homeownerId, address },
+      data: { homeownerId },
     });
   }
 

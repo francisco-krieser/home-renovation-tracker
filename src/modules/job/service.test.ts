@@ -22,7 +22,7 @@ const makeJob = (overrides: Record<string, unknown> = {}) => ({
   contractorId: "contractor-1",
   homeownerId: null as string | null,
   description: "Test job",
-  address: null as string | null,
+  address: "123 Main St",
   status: JobStatus.PLANNING,
   cost: new Decimal("100.00"),
   createdAt: new Date(),
@@ -131,12 +131,17 @@ describe("JobService", () => {
       jobRepo.create.mockResolvedValue(job);
 
       const result = await service.create(
-        { description: "Test job", cost: new Decimal("100.00") },
+        { description: "Test job", address: "1 Test St", cost: new Decimal("100.00") },
         contractor,
       );
 
       expect(jobRepo.create).toHaveBeenCalledWith(
-        { contractorId: "contractor-1", description: "Test job", cost: new Decimal("100.00") },
+        {
+          contractorId: "contractor-1",
+          description: "Test job",
+          address: "1 Test St",
+          cost: new Decimal("100.00"),
+        },
         expect.anything(),
         {},
       );
@@ -267,7 +272,7 @@ describe("JobService", () => {
 
       const result = await service.addHomeowner(
         "job-1",
-        { name: "New Owner", email: "new@example.com", address: "123 Main St" },
+        { name: "New Owner", email: "new@example.com" },
         contractor,
       );
 
@@ -278,7 +283,6 @@ describe("JobService", () => {
       expect(jobRepo.assignHomeowner).toHaveBeenCalledWith(
         "job-1",
         "homeowner-new",
-        "123 Main St",
         expect.anything(),
       );
       expect(result).toBe(updatedJob);
@@ -288,7 +292,7 @@ describe("JobService", () => {
       jobRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.addHomeowner("job-1", { name: "N", email: "n@t.com", address: "1 St" }, contractor),
+        service.addHomeowner("job-1", { name: "N", email: "n@t.com" }, contractor),
       ).rejects.toThrow(NotFoundError);
     });
 
@@ -297,7 +301,7 @@ describe("JobService", () => {
       jobRepo.findById.mockResolvedValue(job);
 
       await expect(
-        service.addHomeowner("job-1", { name: "N", email: "n@t.com", address: "1 St" }, contractor),
+        service.addHomeowner("job-1", { name: "N", email: "n@t.com" }, contractor),
       ).rejects.toThrow(ForbiddenError);
     });
 
@@ -311,11 +315,7 @@ describe("JobService", () => {
       userRepo.create.mockRejectedValue(uniqueError);
 
       await expect(
-        service.addHomeowner(
-          "job-1",
-          { name: "N", email: "dup@t.com", address: "1 St" },
-          contractor,
-        ),
+        service.addHomeowner("job-1", { name: "N", email: "dup@t.com" }, contractor),
       ).rejects.toThrow(BadRequestError);
     });
 
@@ -327,7 +327,7 @@ describe("JobService", () => {
       jobRepo.assignHomeowner.mockResolvedValue({ count: 0 }); // already assigned
 
       await expect(
-        service.addHomeowner("job-1", { name: "N", email: "n@t.com", address: "1 St" }, contractor),
+        service.addHomeowner("job-1", { name: "N", email: "n@t.com" }, contractor),
       ).rejects.toThrow(BadRequestError);
     });
 
@@ -337,7 +337,7 @@ describe("JobService", () => {
 
       // homeowner-1's contractorId check: job.contractorId ('contractor-1') !== homeowner.userId ('homeowner-1')
       await expect(
-        service.addHomeowner("job-1", { name: "N", email: "n@t.com", address: "1 St" }, homeowner),
+        service.addHomeowner("job-1", { name: "N", email: "n@t.com" }, homeowner),
       ).rejects.toThrow(ForbiddenError);
     });
   });

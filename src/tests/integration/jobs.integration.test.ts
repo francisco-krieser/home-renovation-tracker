@@ -48,6 +48,7 @@ const CREATE_JOB = /* GraphQL */ `
     createJob(input: $input) {
       id
       description
+      address
       status
       cost
     }
@@ -234,13 +235,14 @@ describe("Jobs", () => {
 
       const { data, errors } = await gql(
         CREATE_JOB,
-        { input: { description: "New bathroom", cost: "12000.50" } },
+        { input: { description: "New bathroom", address: "10 Renovate Ave", cost: "12000.50" } },
         token,
       );
 
       expect(errors).toBeUndefined();
       expect(data.createJob.id).toBeDefined();
       expect(data.createJob.description).toBe("New bathroom");
+      expect(data.createJob.address).toBe("10 Renovate Ave");
       expect(data.createJob.status).toBe("PLANNING");
       expect(data.createJob.cost).toBe("12000.5");
     });
@@ -253,7 +255,7 @@ describe("Jobs", () => {
 
       const { errors } = await gql(
         CREATE_JOB,
-        { input: { description: "Attempt", cost: "100" } },
+        { input: { description: "Attempt", address: "1 St", cost: "100" } },
         token,
       );
 
@@ -396,14 +398,14 @@ describe("Jobs", () => {
         ADD_HOMEOWNER,
         {
           jobId: job.id,
-          input: { name: "Jane Doe", email: "jane@example.com", address: "42 Elm Street" },
+          input: { name: "Jane Doe", email: "jane@example.com" },
         },
         token,
       );
 
       expect(errors).toBeUndefined();
       expect(data.addHomeowner.id).toBe(job.id);
-      expect(data.addHomeowner.address).toBe("42 Elm Street");
+      expect(data.addHomeowner.address).toBe("123 Test Street");
       expect(data.addHomeowner.homeowner.name).toBe("Jane Doe");
       expect(data.addHomeowner.homeowner.email).toBe("jane@example.com");
       expect(data.addHomeowner.homeowner.role).toBe("HOMEOWNER");
@@ -418,7 +420,7 @@ describe("Jobs", () => {
         ADD_HOMEOWNER,
         {
           jobId: job.id,
-          input: { name: "Bob", email: "bob@example.com", address: "1 Main St" },
+          input: { name: "Bob", email: "bob@example.com" },
         },
         token,
       );
@@ -442,7 +444,7 @@ describe("Jobs", () => {
         ADD_HOMEOWNER,
         {
           jobId: job.id,
-          input: { name: "Alice", email: "taken@example.com", address: "1 St" },
+          input: { name: "Alice", email: "taken@example.com" },
         },
         token,
       );
@@ -461,7 +463,7 @@ describe("Jobs", () => {
         ADD_HOMEOWNER,
         {
           jobId: job.id,
-          input: { name: "Second", email: "second@example.com", address: "2 St" },
+          input: { name: "Second", email: "second@example.com" },
         },
         token,
       );
@@ -480,7 +482,7 @@ describe("Jobs", () => {
         ADD_HOMEOWNER,
         {
           jobId: job.id,
-          input: { name: "Another", email: "another@example.com", address: "3 St" },
+          input: { name: "Another", email: "another@example.com" },
         },
         token,
       );

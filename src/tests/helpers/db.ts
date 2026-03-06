@@ -31,12 +31,13 @@ export async function createContractor(overrides: { name?: string; email?: strin
 
 export async function createJob(
   contractorId: string,
-  overrides: { description?: string; cost?: number } = {},
+  overrides: { description?: string; address?: string; cost?: number } = {},
 ) {
   return basePrisma.job.create({
     data: {
       contractorId,
       description: overrides.description ?? "Test renovation job",
+      address: overrides.address ?? "123 Test Street",
       cost: overrides.cost ?? 5000,
     },
   });
@@ -48,7 +49,7 @@ export async function createJob(
  */
 export async function assignHomeowner(
   jobId: string,
-  overrides: { name?: string; email?: string; address?: string } = {},
+  overrides: { name?: string; email?: string } = {},
 ) {
   const homeowner = await basePrisma.user.create({
     data: {
@@ -61,7 +62,7 @@ export async function assignHomeowner(
   // deletedAt filters to findFirst/findMany) so it works correctly here.
   await basePrisma.job.update({
     where: { id: jobId },
-    data: { homeownerId: homeowner.id, address: overrides.address ?? "123 Test Street" },
+    data: { homeownerId: homeowner.id },
   });
   return homeowner;
 }
