@@ -29,6 +29,19 @@ const AddHomeownerInput = builder.inputType("AddHomeownerInput", {
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+builder.prismaObject("JobHistory", {
+  fields: (t) => ({
+    id: t.exposeID("id"),
+    version: t.exposeInt("version"),
+    description: t.exposeString("description"),
+    address: t.exposeString("address"),
+    status: t.expose("status", { type: JobStatusEnum }),
+    cost: t.expose("cost", { type: "Decimal" }),
+    createdAt: t.expose("createdAt", { type: "DateTime" }),
+    changedBy: t.relation("changedBy"),
+  }),
+});
+
 builder.prismaObject("Job", {
   fields: (t) => ({
     id: t.exposeID("id"),
@@ -36,6 +49,7 @@ builder.prismaObject("Job", {
     address: t.exposeString("address", { authScopes: { contractor: true } }),
     status: t.expose("status", { type: JobStatusEnum }),
     cost: t.expose("cost", { type: "Decimal", authScopes: { contractor: true } }),
+    currentVersion: t.exposeInt("currentVersion", { authScopes: { contractor: true } }),
     createdAt: t.expose("createdAt", { type: "DateTime", authScopes: { contractor: true } }),
     updatedAt: t.expose("updatedAt", { type: "DateTime", authScopes: { contractor: true } }),
     contractor: t.relation("contractor", {
@@ -52,6 +66,16 @@ builder.prismaObject("Job", {
 });
 
 // ── Queries ──────────────────────────────────────────────────────────────────
+
+builder.queryField("jobHistory", (t) =>
+  t.prismaField({
+    type: ["JobHistory"],
+    authScopes: { contractor: true },
+    args: { jobId: t.arg.id({ required: true }) },
+    resolve: (_, __, args, ctx) =>
+      ctx.services.job.listJobHistory(args.jobId, requireCurrentUser(ctx)),
+  }),
+);
 
 builder.queryField("jobs", (t) =>
   t.prismaField({
@@ -96,6 +120,26 @@ builder.mutationField("updateJob", (t) =>
     },
     resolve: (query, _, args, ctx) =>
       ctx.services.job.update(args.id, args.input, requireCurrentUser(ctx), query),
+  }),
+);
+
+builder.mutationField("undoJob", (t) =>
+  t.prismaField({
+    type: "Job",
+    authScopes: { contractor: true },
+    args: { id: t.arg.id({ required: true }) },
+    resolve: (query, _, args, ctx) =>
+      ctx.services.job.undoJob(args.id, requireCurrentUser(ctx), query),
+  }),
+);
+
+builder.mutationField("redoJob", (t) =>
+  t.prismaField({
+    type: "Job",
+    authScopes: { contractor: true },
+    args: { id: t.arg.id({ required: true }) },
+    resolve: (query, _, args, ctx) =>
+      ctx.services.job.redoJob(args.id, requireCurrentUser(ctx), query),
   }),
 );
 
