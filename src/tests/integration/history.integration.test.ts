@@ -1,5 +1,11 @@
 import { gql } from "../helpers/gql";
-import { createContractor, createJob, signToken, truncateAll } from "../helpers/db";
+import {
+  assignHomeowner,
+  createContractor,
+  createJob,
+  signToken,
+  truncateAll,
+} from "../helpers/db";
 
 // ── GraphQL operations ────────────────────────────────────────────────────────
 
@@ -328,6 +334,41 @@ describe("Job History", () => {
       expect(data.jobHistory[0].version).toBe(0);
       expect(data.jobHistory[1].version).toBe(1);
       expect(data.jobHistory[2].version).toBe(2);
+    });
+
+    it("returns history for the assigned homeowner", async () => {
+      const contractor = await createContractor();
+      const contractorToken = signToken(contractor.id, contractor.role);
+      const { data: created } = await gql(
+        CREATE_JOB,
+        { input: { description: "start", address: "1 St", cost: "1000" } },
+        contractorToken,
+      );
+      const job = created.createJob;
+      const homeowner = await assignHomeowner(job.id);
+
+      await gql(UPDATE_JOB, { id: job.id, input: { description: "updated" } }, contractorToken);
+
+      const homeownerToken = signToken(homeowner.id, homeowner.role);
+      const { data, errors } = await gql(JOB_HISTORY, { jobId: job.id }, homeownerToken);
+
+      expect(errors).toBeUndefined();
+      expect(data.jobHistory).toHaveLength(2);
+      expect(data.jobHistory[0].version).toBe(0);
+      expect(data.jobHistory[1].version).toBe(1);
+    });
+
+    it("returns FORBIDDEN for a homeowner not assigned to the job", async () => {
+      const contractor = await createContractor();
+      const job = await createJob(contractor.id);
+      const otherJob = await createJob(contractor.id);
+      const homeowner = await assignHomeowner(otherJob.id);
+      const token = signToken(homeowner.id, homeowner.role);
+
+      const { errors } = await gql(JOB_HISTORY, { jobId: job.id }, token);
+
+      expect(errors).toBeDefined();
+      expect(errors![0].extensions?.code).toBe("FORBIDDEN");
     });
 
     it("returns FORBIDDEN for a different contractor", async () => {

@@ -70,7 +70,7 @@ builder.prismaObject("Job", {
 builder.queryField("jobHistory", (t) =>
   t.prismaField({
     type: ["JobHistory"],
-    authScopes: { contractor: true },
+    authScopes: { authenticated: true },
     args: { jobId: t.arg.id({ required: true }) },
     resolve: (_, __, args, ctx) =>
       ctx.services.job.listJobHistory(args.jobId, requireCurrentUser(ctx)),

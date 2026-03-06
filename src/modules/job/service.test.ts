@@ -416,8 +416,20 @@ describe("JobService", () => {
       await expect(service.listJobHistory("job-1", contractor)).rejects.toThrow(ForbiddenError);
     });
 
-    it("throws ForbiddenError when a homeowner tries to list history", async () => {
+    it("returns history entries for the assigned homeowner", async () => {
       const job = makeJob({ homeownerId: "homeowner-1" }) as any;
+      const entries = [makeHistoryEntry()] as any[];
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByJobId.mockResolvedValue(entries);
+
+      const result = await service.listJobHistory("job-1", homeowner);
+
+      expect(historyRepo.findByJobId).toHaveBeenCalledWith("job-1");
+      expect(result).toBe(entries);
+    });
+
+    it("throws ForbiddenError when homeowner is not assigned to the job", async () => {
+      const job = makeJob({ homeownerId: "other-homeowner" }) as any;
       jobRepo.findById.mockResolvedValue(job);
 
       await expect(service.listJobHistory("job-1", homeowner)).rejects.toThrow(ForbiddenError);

@@ -186,7 +186,6 @@ export class JobService {
   }
 
   async listJobHistory(jobId: string, currentUser: CurrentUser): Promise<JobHistory[]> {
-    if (currentUser.role !== Role.CONTRACTOR) throw new ForbiddenError();
     await this.getJob(jobId, currentUser);
     return this.historyRepo.findByJobId(jobId);
   }
