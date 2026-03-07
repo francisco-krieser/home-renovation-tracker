@@ -55,7 +55,7 @@ npm run db:seed      # seeds the contractor user
 npm run dev
 ```
 
-Server is available at **http://localhost:4000/graphqlgraphql**
+Server is available at **http://localhost:4000/graphql**
 
 ### Available scripts
 
