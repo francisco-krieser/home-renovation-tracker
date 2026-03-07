@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator pothos {
+  provider          = "prisma-pothos-types"
+  generateDatamodel = "true"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CONTRACTOR
+  HOMEOWNER
+}
+
+enum JobStatus {
+  PLANNING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String    @unique
+  role      Role
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  contractorJobs Job[]     @relation("ContractorJobs")
+  homeownerJob   Job?      @relation("HomeownerJob")
+  sentMessages   Message[] @relation("SentMessages")
+
+  @@map("users")
+}
+
+model Job {
+  id           String    @id @default(uuid())
+  contractorId String    @map("contractor_id")
+  homeownerId  String?   @unique @map("homeowner_id")
+  description  String
+  address      String
+  status       JobStatus @default(PLANNING)
+  cost         Decimal   @db.Decimal(10, 2)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  contractor User     @relation("ContractorJobs", fields: [contractorId], references: [id])
+  homeowner  User?    @relation("HomeownerJob", fields: [homeownerId], references: [id])
+  messages   Message[]
+
+  @@map("jobs")
+}
+
+model Message {
+  id        String    @id @default(uuid())
+  jobId     String    @map("job_id")
+  senderId  String    @map("sender_id")
+  content   String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @map("updated_at")
+
+  job    Job  @relation(fields: [jobId], references: [id])
+  sender User @relation("SentMessages", fields: [senderId], references: [id])
+
+  @@map("messages")
+}
