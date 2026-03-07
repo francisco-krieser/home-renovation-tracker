@@ -41,21 +41,31 @@ interface JwtPayload {
   role: Role;
 }
 
+async function buildContextFromToken(token: string | undefined): Promise<Context> {
+  if (!token) return { currentUser: null, services };
+
+  try {
+    const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
+    const foundUser = await userRepository.findById(payload.userId);
+    if (!foundUser) return { currentUser: null, services };
+    return { currentUser: { userId: foundUser.id, role: foundUser.role }, services };
+  } catch {
+    return { currentUser: null, services };
+  }
+}
+
 export async function buildContext(req: IncomingMessage): Promise<Context> {
   const authHeader = req.headers["authorization"];
   if (!authHeader?.startsWith("Bearer ")) {
     return { currentUser: null, services };
   }
+  return buildContextFromToken(authHeader.slice(7));
+}
 
-  try {
-    const token = authHeader.slice(7);
-    const payload = jwt.verify(token, env.JWT_SECRET) as JwtPayload;
-
-    const foundUser = await userRepository.findById(payload.userId);
-    if (!foundUser) return { currentUser: null, services };
-
-    return { currentUser: { userId: foundUser.id, role: foundUser.role }, services };
-  } catch {
-    return { currentUser: null, services };
-  }
+export async function buildWsContext(ctx: {
+  connectionParams?: Record<string, unknown>;
+}): Promise<Context> {
+  const auth = ctx.connectionParams?.authorization;
+  const token = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : undefined;
+  return buildContextFromToken(token);
 }

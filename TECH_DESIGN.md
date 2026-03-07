@@ -7,8 +7,10 @@ Backend system for a tool that allows contractors and homeowners to collaborate 
 **Stack:**
 
 - Language: Node.js + TypeScript
-- API: GraphQL (Apollo Server 5, standalone)
+- API: GraphQL (Apollo Server 5, Express middleware, Pothos Plugin Prisma)
+- Real-time: GraphQL subscriptions via `graphql-ws` (WebSocket) + Redis Pub/Sub
 - Database: PostgreSQL + Prisma ORM
+- Cache/Pub-Sub: Redis 7
 - Auth: JWT (shared mock password)
 - Runtime: Node 20+
 
@@ -25,9 +27,9 @@ home-renovation-tracker/
 │   ├── config/
 │   │   └── env.ts             # env parsing/validation (Zod)
 │   ├── context/
-│   │   └── index.ts           # builds context from JWT; instantiates services per request
+│   │   └── index.ts           # builds context from JWT (HTTP + WebSocket); instantiates services per request
 │   ├── graphql/
-│   │   ├── builder.ts         # Pothos SchemaBuilder (PrismaPlugin + ScopeAuthPlugin)
+│   │   ├── builder.ts         # Pothos SchemaBuilder (PrismaPlugin + ScopeAuthPlugin; Query/Mutation/Subscription root types)
 │   │   ├── scalars.ts         # custom scalars: Decimal, DateTime
 │   │   └── schema.ts          # imports module resolvers; calls builder.toSchema()
 │   ├── modules/
@@ -40,14 +42,15 @@ home-renovation-tracker/
 │   │   │   ├── service.ts
 │   │   │   └── repository.ts
 │   │   └── message/
-│   │       ├── resolvers.ts
-│   │       ├── service.ts
+│   │       ├── resolvers.ts   # sendMessage mutation + messageSent subscription
+│   │       ├── service.ts     # business logic; publishes to Redis on send
 │   │       └── repository.ts
 │   ├── lib/
-│   │   └── prisma.ts          # prisma client + soft-delete extension
+│   │   ├── prisma.ts          # prisma client + soft-delete extension
+│   │   └── pubsub.ts          # Redis PubSub singleton (graphql-redis-subscriptions)
 │   ├── errors/
 │   │   └── appErrors.ts       # domain error classes
-│   └── index.ts               # Apollo Server setup + entry point
+│   └── index.ts               # Apollo Server setup: Express middleware + WebSocket server
 ├── .env
 ├── .env.example
 ├── .gitignore
@@ -282,6 +285,17 @@ type Mutation {
 }
 ```
 
+### Subscriptions
+
+```graphql
+type Subscription {
+  # authScopes: { authenticated }
+  # Streams new messages for a job in real time via WebSocket.
+  # Enforces the same ownership rules as sendMessage.
+  messageSent(jobId: ID!): Message!
+}
+```
+
 ---
 
 ## Key Use-Case Behaviors
@@ -330,6 +344,16 @@ type Mutation {
   - Homeowner can message only on their assigned job
   - Cross-job message access is forbidden
   - Creates message with `sender_id = ctx.userId`
+  - After persisting, publishes to Redis channel `MESSAGE_SENT.<jobId>`
+
+### `messageSent` subscription
+
+- Client opens a WebSocket connection to `/graphql` and provides a JWT in `connectionParams.authorization`
+- The `subscribe` function verifies job access via `JobService.getJob` (same rules as `sendMessage`)
+  - Unauthorized or unknown job: subscription fails immediately with the appropriate error
+- On success, the client receives `Message` events whenever `sendMessage` is called on that job
+- Uses Redis Pub/Sub as the event bus — supports multiple server instances without missed events
+- Topic format: `MESSAGE_SENT.<jobId>` — scoped per job to avoid cross-job leakage
 
 ---
 
@@ -419,22 +443,3 @@ Notes:
 - Browser/UI tests (backend-focused project)
 
 ---
-
-## Tradeoffs & Assumptions
-
-
-| Decision                                                                | Rationale                                                                                                                                                                      |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| No separate contractor/homeowner profile tables                         | Requirements don't justify the indirection — role is expressed via `users.role` and direct FKs on `jobs`; profile tables were empty wrappers after the address moved to `jobs` |
-| One homeowner per job (`homeowner_id UNIQUE`)                           | Requirements read "their job" (singular) for homeowners; domain reflects a single property owner per renovation job                                                            |
-| `address` on `jobs` not `users`                                         | It is the job site location, not a user attribute; provided at the time the homeowner is added to the job                                                                      |
-| `jobs.contractor_id` and `jobs.homeowner_id` reference `users` directly | Removes an unnecessary join layer; `users.role` is already the authorization source of truth                                                                                   |
-| Soft delete on `users` and `jobs`                                       | Preserves history/auditability while keeping query behavior predictable via `deleted_at IS NULL` filters                                                                       |
-| `addHomeowner` merged into job module                                   | After removing the Homeowner entity, the operation is semantically a job lifecycle step — it modifies a job, returns a job, and enforces job ownership                         |
-| DB-backed identity lookup in auth provider                              | Keeps login behavior realistic while still simple                                                                                                                              |
-| Single shared mock password (`DEFAULT_MOCK_PASSWORD`)                   | Keeps login simple for this exercise; production would use unique per-user hashed passwords                                                                                    |
-| Pothos scope-auth + service-layer checks                                | Scope-auth keeps high-level API policy co-located with field definitions in code-first style; service checks enforce ownership and domain integrity                            |
-| Single login endpoint for both roles                                    | Production standard; client should not need to know role before authenticating                                                                                                 |
-| Service layer between resolvers and repositories                        | Keeps resolver layer thin, centralizes business rules, and improves testability                                                                                                |
-
-

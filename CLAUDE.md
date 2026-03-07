@@ -14,8 +14,8 @@ npm run dev          # start with hot reload (tsx watch)
 npm run build        # compile TypeScript to dist/
 npm start            # run compiled server
 
-# Database
-docker compose up -d  # start PostgreSQL (binds to port 5433)
+# Database & Redis
+docker compose up -d  # start PostgreSQL (port 5433) and Redis (port 6379)
 npm run db:migrate    # apply Prisma migrations
 npm run db:seed       # seed initial contractor user
 npm run db:studio     # open Prisma Studio
@@ -49,10 +49,11 @@ Three-layer module structure. Each module (`job`, `user`, `message`) has three f
 - **`repository.ts`** — Prisma queries only; zero policy decisions
 
 Cross-cutting concerns:
-- **`src/graphql/builder.ts`** — Pothos `SchemaBuilder` with `PrismaPlugin` and `ScopeAuthPlugin`; defines `authScopes` (`authenticated`, `contractor`)
+- **`src/graphql/builder.ts`** — Pothos `SchemaBuilder` with `PrismaPlugin` and `ScopeAuthPlugin`; defines `authScopes` (`authenticated`, `contractor`); declares Query/Mutation/Subscription root types
 - **`src/graphql/schema.ts`** — imports all module resolvers and calls `builder.toSchema()`
 - **`src/graphql/scalars.ts`** — custom scalar types (`Decimal`, `DateTime`)
-- **`src/context/index.ts`** — builds per-request context: validates JWT → populates `{ currentUser, services }`; services are module-level singletons shared across requests
+- **`src/context/index.ts`** — builds per-request context: validates JWT → populates `{ currentUser, services }`; `buildContext` for HTTP, `buildWsContext` for WebSocket subscriptions; services are module-level singletons shared across requests
+- **`src/lib/pubsub.ts`** — Redis PubSub singleton (`RedisPubSub` from `graphql-redis-subscriptions`); used by message service (publish) and message resolver (subscribe); topic format: `MESSAGE_SENT.<jobId>`
 - **`src/errors/appErrors.ts`** — typed error classes: `Unauthorized`, `Forbidden`, `NotFound`, `BadRequest`
 
 ## Authorization Model

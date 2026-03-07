@@ -1,5 +1,7 @@
+import type { Message } from "@prisma/client";
 import { builder } from "../../graphql/builder";
 import { requireCurrentUser } from "../../context";
+import { getPubSub, TOPICS } from "../../lib/pubsub";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,5 +27,23 @@ builder.mutationField("sendMessage", (t) =>
     },
     resolve: (query, _, args, ctx) =>
       ctx.services.message.send(args.jobId, args.content, requireCurrentUser(ctx), query),
+  }),
+);
+
+// ── Subscriptions ────────────────────────────────────────────────────────────
+
+builder.subscriptionField("messageSent", (t) =>
+  t.field({
+    type: MessageRef,
+    authScopes: { authenticated: true },
+    args: {
+      jobId: t.arg.id({ required: true }),
+    },
+    subscribe: async (_root, args, ctx) => {
+      // Verify the subscriber has access to this job (throws Forbidden/NotFound if not)
+      await ctx.services.job.getJob(String(args.jobId), requireCurrentUser(ctx));
+      return getPubSub().asyncIterator<Message>(TOPICS.MESSAGE_SENT(String(args.jobId)));
+    },
+    resolve: (event) => event as Message,
   }),
 );
