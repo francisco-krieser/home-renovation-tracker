@@ -33,30 +33,51 @@ model User {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  contractorJobs Job[]     @relation("ContractorJobs")
-  homeownerJob   Job?      @relation("HomeownerJob")
-  sentMessages   Message[] @relation("SentMessages")
+  contractorJobs Job[]        @relation("ContractorJobs")
+  homeownerJob   Job?         @relation("HomeownerJob")
+  sentMessages   Message[]    @relation("SentMessages")
+  changedHistory JobHistory[] @relation("ChangedHistory")
 
   @@map("users")
 }
 
 model Job {
-  id           String    @id @default(uuid())
-  contractorId String    @map("contractor_id")
-  homeownerId  String?   @unique @map("homeowner_id")
-  description  String
-  address      String
-  status       JobStatus @default(PLANNING)
-  cost         Decimal   @db.Decimal(10, 2)
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
-  deletedAt    DateTime? @map("deleted_at")
+  id             String    @id @default(uuid())
+  contractorId   String    @map("contractor_id")
+  homeownerId    String?   @unique @map("homeowner_id")
+  description    String
+  address        String
+  status         JobStatus @default(PLANNING)
+  cost           Decimal   @db.Decimal(10, 2)
+  currentVersion Int       @default(0) @map("current_version")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
 
-  contractor User     @relation("ContractorJobs", fields: [contractorId], references: [id])
-  homeowner  User?    @relation("HomeownerJob", fields: [homeownerId], references: [id])
+  contractor User         @relation("ContractorJobs", fields: [contractorId], references: [id])
+  homeowner  User?        @relation("HomeownerJob", fields: [homeownerId], references: [id])
   messages   Message[]
+  history    JobHistory[]
 
   @@map("jobs")
+}
+
+model JobHistory {
+  id          String    @id @default(uuid())
+  jobId       String    @map("job_id")
+  version     Int
+  description String
+  address     String
+  status      JobStatus
+  cost        Decimal   @db.Decimal(10, 2)
+  changedById String    @map("changed_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  job       Job  @relation(fields: [jobId], references: [id])
+  changedBy User @relation("ChangedHistory", fields: [changedById], references: [id])
+
+  @@unique([jobId, version])
+  @@map("job_history")
 }
 
 model Message {

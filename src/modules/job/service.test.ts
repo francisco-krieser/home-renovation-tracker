@@ -3,6 +3,7 @@ import { Decimal } from "@prisma/client/runtime/library";
 import { JobService } from "./service";
 import { IJobRepository } from "./repository";
 import { IUserRepository } from "../user/repository";
+import { IJobHistoryRepository } from "./history.repository";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../../errors/appErrors";
 import { CurrentUser } from "../../context";
 
@@ -25,9 +26,23 @@ const makeJob = (overrides: Record<string, unknown> = {}) => ({
   address: "123 Main St",
   status: JobStatus.PLANNING,
   cost: new Decimal("100.00"),
+  currentVersion: 0,
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,
+  ...overrides,
+});
+
+const makeHistoryEntry = (overrides: Record<string, unknown> = {}) => ({
+  id: "history-1",
+  jobId: "job-1",
+  version: 0,
+  description: "Test job",
+  address: "123 Main St",
+  status: JobStatus.PLANNING,
+  cost: new Decimal("100.00"),
+  changedById: "contractor-1",
+  createdAt: new Date(),
   ...overrides,
 });
 
@@ -49,6 +64,7 @@ const homeowner: CurrentUser = { userId: "homeowner-1", role: Role.HOMEOWNER };
 describe("JobService", () => {
   let jobRepo: jest.Mocked<IJobRepository>;
   let userRepo: jest.Mocked<IUserRepository>;
+  let historyRepo: jest.Mocked<IJobHistoryRepository>;
   let service: JobService;
 
   beforeEach(() => {
@@ -65,7 +81,13 @@ describe("JobService", () => {
       findById: jest.fn(),
       create: jest.fn(),
     };
-    service = new JobService(jobRepo, userRepo);
+    historyRepo = {
+      createEntry: jest.fn().mockResolvedValue(makeHistoryEntry()),
+      findByJobId: jest.fn(),
+      findByVersion: jest.fn(),
+      deleteAfterVersion: jest.fn().mockResolvedValue({ count: 0 }),
+    };
+    service = new JobService(jobRepo, userRepo, historyRepo);
   });
 
   describe("listContractorJobs", () => {
@@ -126,7 +148,7 @@ describe("JobService", () => {
   });
 
   describe("create", () => {
-    it("creates a job owned by the current contractor", async () => {
+    it("creates a job and writes version-0 history entry atomically", async () => {
       const job = makeJob() as any;
       jobRepo.create.mockResolvedValue(job);
 
@@ -145,22 +167,44 @@ describe("JobService", () => {
         expect.anything(),
         {},
       );
+      expect(historyRepo.createEntry).toHaveBeenCalledWith(
+        {
+          jobId: "job-1",
+          version: 0,
+          description: "Test job",
+          address: "123 Main St",
+          status: JobStatus.PLANNING,
+          cost: new Decimal("100.00"),
+          changedById: "contractor-1",
+        },
+        expect.anything(),
+      );
       expect(result).toBe(job);
     });
   });
 
   describe("update", () => {
-    it("updates job fields for the owning contractor", async () => {
-      const job = makeJob() as any;
-      const updated = makeJob({ description: "Updated" }) as any;
+    it("truncates redo stack, writes snapshot, and updates job", async () => {
+      const job = makeJob({ currentVersion: 1 }) as any;
+      const updated = makeJob({ description: "Updated", currentVersion: 2 }) as any;
       jobRepo.findById.mockResolvedValue(job);
       jobRepo.update.mockResolvedValue(updated);
 
       const result = await service.update("job-1", { description: "Updated" }, contractor);
 
+      expect(historyRepo.deleteAfterVersion).toHaveBeenCalledWith("job-1", 1, expect.anything());
+      expect(historyRepo.createEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          version: 2,
+          description: "Updated",
+          changedById: "contractor-1",
+        }),
+        expect.anything(),
+      );
       expect(jobRepo.update).toHaveBeenCalledWith(
         "job-1",
-        { description: "Updated" },
+        1,
+        expect.objectContaining({ description: "Updated", currentVersion: 2 }),
         expect.anything(),
         {},
       );
@@ -169,7 +213,7 @@ describe("JobService", () => {
 
     it("filters out null values and updates only defined fields", async () => {
       const job = makeJob() as any;
-      const updated = makeJob({ status: JobStatus.IN_PROGRESS }) as any;
+      const updated = makeJob({ status: JobStatus.IN_PROGRESS, currentVersion: 1 }) as any;
       jobRepo.findById.mockResolvedValue(job);
       jobRepo.update.mockResolvedValue(updated);
 
@@ -181,7 +225,15 @@ describe("JobService", () => {
 
       expect(jobRepo.update).toHaveBeenCalledWith(
         "job-1",
-        { status: JobStatus.IN_PROGRESS },
+        0,
+        expect.objectContaining({ status: JobStatus.IN_PROGRESS, currentVersion: 1 }),
+        expect.anything(),
+        {},
+      );
+      expect(jobRepo.update).toHaveBeenCalledWith(
+        "job-1",
+        0,
+        expect.not.objectContaining({ description: expect.anything() }),
         expect.anything(),
         {},
       );
@@ -194,7 +246,11 @@ describe("JobService", () => {
 
     it("throws BadRequestError when all fields are null", async () => {
       await expect(
-        service.update("job-1", { description: null, status: null, cost: null }, contractor),
+        service.update(
+          "job-1",
+          { description: null, address: null, status: null, cost: null },
+          contractor,
+        ),
       ).rejects.toThrow(BadRequestError);
     });
 
@@ -216,18 +272,173 @@ describe("JobService", () => {
       );
     });
 
-    it("converts Prisma P2025 error to NotFoundError on update", async () => {
+    it("throws BadRequestError when optimistic lock fails (concurrent modification)", async () => {
       const job = makeJob() as any;
       jobRepo.findById.mockResolvedValue(job);
-      const prismaError = new Prisma.PrismaClientKnownRequestError("Record not found", {
-        code: "P2025",
-        clientVersion: "5.0.0",
-      });
-      jobRepo.update.mockRejectedValue(prismaError);
+      jobRepo.update.mockResolvedValue(null); // version mismatch
 
       await expect(service.update("job-1", { description: "Updated" }, contractor)).rejects.toThrow(
-        NotFoundError,
+        BadRequestError,
       );
+    });
+  });
+
+  describe("undoJob", () => {
+    it("throws BadRequestError when already at version 0", async () => {
+      const job = makeJob({ currentVersion: 0 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+
+      await expect(service.undoJob("job-1", contractor)).rejects.toThrow(BadRequestError);
+      expect(historyRepo.findByVersion).not.toHaveBeenCalled();
+    });
+
+    it("restores the previous snapshot and decrements currentVersion", async () => {
+      const job = makeJob({ currentVersion: 2 }) as any;
+      const snapshot = makeHistoryEntry({ version: 1, description: "Before update" }) as any;
+      const restored = makeJob({ description: "Before update", currentVersion: 1 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(snapshot);
+      jobRepo.update.mockResolvedValue(restored);
+
+      const result = await service.undoJob("job-1", contractor);
+
+      expect(historyRepo.findByVersion).toHaveBeenCalledWith("job-1", 1, expect.anything());
+      expect(jobRepo.update).toHaveBeenCalledWith(
+        "job-1",
+        2,
+        expect.objectContaining({
+          description: "Before update",
+          address: "123 Main St",
+          status: JobStatus.PLANNING,
+          cost: new Decimal("100.00"),
+          currentVersion: 1,
+        }),
+        expect.anything(),
+        {},
+      );
+      expect(result).toBe(restored);
+    });
+
+    it("throws BadRequestError when snapshot not found inside tx", async () => {
+      const job = makeJob({ currentVersion: 1 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(null);
+
+      await expect(service.undoJob("job-1", contractor)).rejects.toThrow(BadRequestError);
+    });
+
+    it("throws BadRequestError on concurrent modification", async () => {
+      const job = makeJob({ currentVersion: 1 }) as any;
+      const snapshot = makeHistoryEntry({ version: 0 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(snapshot);
+      jobRepo.update.mockResolvedValue(null);
+
+      await expect(service.undoJob("job-1", contractor)).rejects.toThrow(BadRequestError);
+    });
+
+    it("throws ForbiddenError when contractor does not own the job", async () => {
+      const job = makeJob({ contractorId: "contractor-2" }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+
+      await expect(service.undoJob("job-1", contractor)).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe("redoJob", () => {
+    it("throws BadRequestError when no next version exists", async () => {
+      const job = makeJob({ currentVersion: 1 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(null);
+
+      await expect(service.redoJob("job-1", contractor)).rejects.toThrow(BadRequestError);
+    });
+
+    it("restores the next snapshot and increments currentVersion", async () => {
+      const job = makeJob({ currentVersion: 1 }) as any;
+      const snapshot = makeHistoryEntry({ version: 2, description: "After update" }) as any;
+      const restored = makeJob({ description: "After update", currentVersion: 2 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(snapshot);
+      jobRepo.update.mockResolvedValue(restored);
+
+      const result = await service.redoJob("job-1", contractor);
+
+      expect(historyRepo.findByVersion).toHaveBeenCalledWith("job-1", 2, expect.anything());
+      expect(jobRepo.update).toHaveBeenCalledWith(
+        "job-1",
+        1,
+        expect.objectContaining({
+          description: "After update",
+          currentVersion: 2,
+        }),
+        expect.anything(),
+        {},
+      );
+      expect(result).toBe(restored);
+    });
+
+    it("throws BadRequestError on concurrent modification", async () => {
+      const job = makeJob({ currentVersion: 0 }) as any;
+      const snapshot = makeHistoryEntry({ version: 1 }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByVersion.mockResolvedValue(snapshot);
+      jobRepo.update.mockResolvedValue(null);
+
+      await expect(service.redoJob("job-1", contractor)).rejects.toThrow(BadRequestError);
+    });
+
+    it("throws ForbiddenError when contractor does not own the job", async () => {
+      const job = makeJob({ contractorId: "contractor-2" }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+
+      await expect(service.redoJob("job-1", contractor)).rejects.toThrow(ForbiddenError);
+    });
+  });
+
+  describe("listJobHistory", () => {
+    it("returns history entries for the owning contractor", async () => {
+      const job = makeJob() as any;
+      const entries = [makeHistoryEntry()] as any[];
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByJobId.mockResolvedValue(entries);
+
+      const result = await service.listJobHistory("job-1", contractor);
+
+      expect(historyRepo.findByJobId).toHaveBeenCalledWith("job-1");
+      expect(result).toBe(entries);
+    });
+
+    it("throws ForbiddenError when contractor does not own the job", async () => {
+      const job = makeJob({ contractorId: "contractor-2" }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+
+      await expect(service.listJobHistory("job-1", contractor)).rejects.toThrow(ForbiddenError);
+    });
+
+    it("returns history entries for the assigned homeowner", async () => {
+      const job = makeJob({ homeownerId: "homeowner-1" }) as any;
+      const entries = [makeHistoryEntry()] as any[];
+      jobRepo.findById.mockResolvedValue(job);
+      historyRepo.findByJobId.mockResolvedValue(entries);
+
+      const result = await service.listJobHistory("job-1", homeowner);
+
+      expect(historyRepo.findByJobId).toHaveBeenCalledWith("job-1");
+      expect(result).toBe(entries);
+    });
+
+    it("throws ForbiddenError when homeowner is not assigned to the job", async () => {
+      const job = makeJob({ homeownerId: "other-homeowner" }) as any;
+      jobRepo.findById.mockResolvedValue(job);
+
+      await expect(service.listJobHistory("job-1", homeowner)).rejects.toThrow(ForbiddenError);
+    });
+
+    it("throws NotFoundError when job does not exist", async () => {
+      jobRepo.findById.mockResolvedValue(null);
+
+      await expect(service.listJobHistory("job-1", contractor)).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -262,7 +473,7 @@ describe("JobService", () => {
     it("creates a homeowner user and assigns them to the job atomically", async () => {
       const job = makeJob() as any;
       const newHomeowner = makeUser() as any;
-      const updatedJob = makeJob({ homeownerId: "homeowner-new", address: "123 Main St" }) as any;
+      const updatedJob = makeJob({ homeownerId: "homeowner-new" }) as any;
 
       jobRepo.findById
         .mockResolvedValueOnce(job) // ownership check inside tx

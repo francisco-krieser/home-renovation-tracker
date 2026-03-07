@@ -21,7 +21,9 @@ npm run db:seed       # seed initial contractor user
 npm run db:studio     # open Prisma Studio
 
 # Tests
-npm test             # run full test suite (Jest)
+npm test             # run unit tests only (Jest)
+npm run test:integration  # run integration tests only (Testcontainers)
+npm run test:all     # run unit + integration tests (always use this after any code change)
 
 # Lint & Format
 npm run lint         # check for lint errors (ESLint + typescript-eslint)

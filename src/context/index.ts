@@ -7,6 +7,7 @@ import { JobService } from "../modules/job/service";
 import { UserService } from "../modules/user/service";
 import { MessageService } from "../modules/message/service";
 import { jobRepository } from "../modules/job/repository";
+import { jobHistoryRepository } from "../modules/job/history.repository";
 import { userRepository } from "../modules/user/repository";
 import { messageRepository } from "../modules/message/repository";
 
@@ -30,7 +31,7 @@ export function requireCurrentUser(ctx: Context): CurrentUser {
 }
 
 // Services are stateless — instantiate once and reuse across all requests
-const jobService = new JobService(jobRepository, userRepository);
+const jobService = new JobService(jobRepository, userRepository, jobHistoryRepository);
 const userService = new UserService(userRepository);
 const messageService = new MessageService(messageRepository, jobService);
 const services = { job: jobService, user: userService, message: messageService };
